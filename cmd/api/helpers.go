@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"github.com/go-playground/validator/v10"
 	"io"
 	"net/http"
 )
@@ -43,6 +44,28 @@ func (app *application) decodeJson(w http.ResponseWriter, r *http.Request, data 
 	err = decoder.Decode(&struct{}{})
 	if !errors.Is(err, io.EOF) {
 		return errors.New("body must only contain a single JSON value")
+	}
+	return nil
+}
+
+type apiError struct {
+	Field   string
+	Message string
+}
+
+func (app *application) validateInput(data interface{}) []apiError {
+	err := app.validator.Struct(data)
+	if err != nil {
+		var validatorErr validator.ValidationErrors
+
+		if errors.As(err, &validatorErr) {
+			output := make([]apiError, len(validatorErr))
+			for i, e := range validatorErr {
+				output[i] = apiError{Field: e.Field(), Message: e.Error()}
+			}
+			return output
+		}
+		return nil
 	}
 	return nil
 }

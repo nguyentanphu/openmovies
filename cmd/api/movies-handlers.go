@@ -9,10 +9,10 @@ import (
 )
 
 type MovieDto struct {
-	Title   string       `json:"title"`
-	Year    int32        `json:"year"`
-	Runtime data.Runtime `json:"runtime"`
-	Genres  []string     `json:"genres"`
+	Title   string       `json:"title" validate:"max=500"`
+	Year    int32        `json:"year" validate:"min=1888"`
+	Runtime data.Runtime `json:"runtime" validate:"gt=0"`
+	Genres  []string     `json:"genres" validate:"required,min=1,max=5,unique"`
 }
 
 func (app *application) createMovie(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +23,12 @@ func (app *application) createMovie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(w, "%+v\n", input)
+	apiErr := app.validateInput(input)
+	if apiErr != nil {
+		app.fieldValidationResponse(w, r, apiErr)
+		return
+	}
+	fmt.Fprintf(w, "%+v", input)
 }
 
 func (app *application) getMovie(w http.ResponseWriter, r *http.Request) {
