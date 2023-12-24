@@ -6,10 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"github.com/go-playground/validator/v10"
+	"github.com/gorilla/schema"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"log"
 	"net/http"
 	_ "openmovies/docs"
+	"openmovies/internal/data"
 	"os"
 	"time"
 )
@@ -25,9 +27,11 @@ type config struct {
 }
 
 type application struct {
-	config    config
-	logger    *log.Logger
-	validator *validator.Validate
+	config        config
+	logger        *log.Logger
+	validator     *validator.Validate
+	schemaDecoder *schema.Decoder
+	models        data.Models
 }
 
 func main() {
@@ -46,9 +50,11 @@ func main() {
 		logger.Fatal(err)
 	}
 	app := application{
-		logger:    logger,
-		config:    cfg,
-		validator: validate,
+		logger:        logger,
+		config:        cfg,
+		validator:     validate,
+		models:        data.NewModels(db),
+		schemaDecoder: schema.NewDecoder(),
 	}
 	srv := http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.port),

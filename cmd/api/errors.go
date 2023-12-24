@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"runtime/debug"
 )
 
 func (app *application) logError(r *http.Request, err error) {
-	app.logger.Println(err)
+	trace := fmt.Sprintf("%s\n%s", err, debug.Stack())
+	app.logger.Output(2, trace)
+	app.logger.Println(trace)
 }
 
 func (app *application) errorResponse(w http.ResponseWriter, r *http.Request, status int, message interface{}) {
@@ -39,4 +42,8 @@ func (app *application) methodNotAllowedResponse(w http.ResponseWriter, r *http.
 }
 func (app *application) fieldValidationResponse(w http.ResponseWriter, r *http.Request, apiErr []apiError) {
 	app.errorResponse(w, r, http.StatusUnprocessableEntity, apiErr)
+}
+func (app *application) editConflictResponse(w http.ResponseWriter, r *http.Request) {
+	message := "unable to update the record due to an edit conflict, please try again"
+	app.errorResponse(w, r, http.StatusConflict, message)
 }
