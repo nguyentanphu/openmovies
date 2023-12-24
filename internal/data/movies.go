@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"github.com/jackc/pgx/v5/pgtype"
 	"time"
 )
@@ -21,7 +22,7 @@ type Movie struct {
 type MovieRepository interface {
 	Insert(movie *Movie) error
 	GetById(id int64) (*Movie, error)
-	Get(filters MovieFilters) ([]*Movie, error)
+	Get(filters MovieFilters) ([]*Movie, Metadata, error)
 	Update(movie *Movie) error
 	Delete(id int64) error
 }
@@ -117,29 +118,32 @@ func (m MovieModel) Delete(id int64) error {
 	return nil
 }
 
-func (m MovieModel) Get(filters MovieFilters) ([]*Movie, error) {
-	query := `
-		SELECT id, created_at, title, year, runtime, genres, version
+func (m MovieModel) Get(filters MovieFilters) ([]*Movie, Metadata, error) {
+	query := fmt.Sprintf(`
+		SELECT COUNT(*) OVER(), id, created_at, title, year, runtime, genres, version
 		FROM movies
 		WHERE (to_tsvector('simple', title) @@ plainto_tsquery('simple', $1) OR $1 = '')
 		AND (genres @> $2 OR $2 = '{}')
-		ORDER BY id`
-
+		ORDER BY %s
+		LIMIT $3 OFFSET $4
+		`, filters.getOrderBySpec())
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	args := []interface{}{filters.Title, filters.Genres}
+	args := []interface{}{filters.Title, filters.Genres, filters.limit(), filters.offset()}
 	rows, err := m.DB.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, Metadata{}, err
 	}
 
 	defer rows.Close()
+	totalRecords := 0
 	movies := []*Movie{}
 	pgMap := pgtype.NewMap()
 
 	for rows.Next() {
 		var movie Movie
 		err := rows.Scan(
+			&totalRecords,
 			&movie.ID,
 			&movie.CreatedAt,
 			&movie.Title,
@@ -149,14 +153,14 @@ func (m MovieModel) Get(filters MovieFilters) ([]*Movie, error) {
 			&movie.Version,
 		)
 		if err != nil {
-			return nil, err
+			return nil, Metadata{}, err
 		}
 		movies = append(movies, &movie)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, err
+		return nil, Metadata{}, err
 	}
 
-	return movies, nil
+	return movies, calculateMetadata(filters.Page, filters.PageSize, totalRecords), nil
 }

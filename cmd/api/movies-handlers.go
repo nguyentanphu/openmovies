@@ -236,13 +236,13 @@ func (app *application) getMovies(w http.ResponseWriter, r *http.Request) {
 		app.fieldValidationResponse(w, r, apiErr)
 		return
 	}
-	movies, err := app.models.Movies.Get(input)
+	movies, metadata, err := app.models.Movies.Get(input)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
-	err = app.writeJson(w, http.StatusOK, envelop{"movies": movies}, nil)
+	err = app.writeJson(w, http.StatusOK, envelop{"movies": movies, "metadata": metadata}, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
