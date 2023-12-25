@@ -4,14 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"flag"
-	"fmt"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/schema"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"log"
-	"net/http"
 	_ "openmovies/docs"
 	"openmovies/internal/data"
+	"openmovies/internal/jsonlog"
 	"os"
 	"time"
 )
@@ -28,7 +26,7 @@ type config struct {
 
 type application struct {
 	config        config
-	logger        *log.Logger
+	logger        *jsonlog.Logger
 	validator     *validator.Validate
 	schemaDecoder *schema.Decoder
 	models        data.Models
@@ -41,33 +39,24 @@ func main() {
 	flag.StringVar(&cfg.env, "env", "development", "Environment (development|staging|production)")
 	flag.StringVar(&cfg.db.dsn, "db-dsn", os.Getenv("OPENMOVIES_DB_DSN"), "POSTGRES DSN")
 	flag.Parse()
+	logger := jsonlog.New(os.Stdout, jsonlog.LevelInfo)
 
-	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	db, err := openDB(cfg)
 	defer db.Close()
 	if err != nil {
-		logger.Fatal(err)
+		logger.LogFatal(err, nil)
 	}
 	app := application{
-		logger:        logger,
+		logger:        jsonlog.New(os.Stdout, jsonlog.LevelInfo),
 		config:        cfg,
 		validator:     validate,
 		models:        data.NewModels(db),
 		schemaDecoder: schema.NewDecoder(),
 	}
-	srv := http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.port),
-		Handler:      app.routes(),
-		IdleTimeout:  time.Minute,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
-	}
-
-	app.logger.Printf("Starting server %s with port %d", app.config.env, app.config.port)
-	err = srv.ListenAndServe()
+	err = app.serve()
 	if err != nil {
-		app.logger.Fatal(err)
+		app.logger.LogFatal(err, nil)
 	}
 }
 

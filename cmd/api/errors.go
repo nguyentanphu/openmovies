@@ -7,9 +7,11 @@ import (
 )
 
 func (app *application) logError(r *http.Request, err error) {
-	trace := fmt.Sprintf("%s\n%s", err, debug.Stack())
-	app.logger.Output(2, trace)
-	app.logger.Println(trace)
+	app.logger.LogError(err, map[string]string{
+		"request_method": r.Method,
+		"request_URL":    r.URL.String(),
+		"stack":          string(debug.Stack()),
+	})
 }
 
 func (app *application) errorResponse(w http.ResponseWriter, r *http.Request, status int, message interface{}) {

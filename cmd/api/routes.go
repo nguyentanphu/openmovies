@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gorilla/mux"
+	"github.com/justinas/alice"
 	httpSwagger "github.com/swaggo/http-swagger"
 	"net/http"
 )
@@ -26,5 +27,7 @@ func (app *application) routes() http.Handler {
 		httpSwagger.DomID("swagger-ui"),
 	)).Methods(http.MethodGet)
 
-	return router
+	middlewares := alice.New(app.rateLimit, app.recoverPanic)
+
+	return middlewares.Then(router)
 }
