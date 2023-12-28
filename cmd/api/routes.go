@@ -17,6 +17,8 @@ func (app *application) routes() http.Handler {
 	router.HandleFunc("/v1/movies/{id:[0-9]+}", app.patchMovieHandler).Methods(http.MethodPatch)
 	router.HandleFunc("/v1/movies/{id:[0-9]+}", app.deleteMovieHandler).Methods(http.MethodDelete)
 
+	router.HandleFunc("/v1/users", app.registerUser).Methods(http.MethodPost)
+
 	router.MethodNotAllowedHandler = http.HandlerFunc(app.methodNotAllowedResponse)
 	router.NotFoundHandler = http.HandlerFunc(app.notFoundResponse)
 

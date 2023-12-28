@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/go-playground/validator/v10"
 	"io"
 	"net/http"
@@ -68,4 +69,18 @@ func (app *application) validateInput(data interface{}) []apiError {
 		return nil
 	}
 	return nil
+}
+
+func (app *application) background(f func()) {
+	app.wg.Add(1)
+	go func() {
+		defer app.wg.Done()
+		defer func() {
+			if err := recover(); err != nil {
+				app.logger.LogError(fmt.Errorf("%s", err), nil)
+			}
+		}()
+
+		f()
+	}()
 }
