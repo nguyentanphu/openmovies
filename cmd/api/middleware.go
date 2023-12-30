@@ -1,10 +1,15 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/time/rate"
 	"net"
 	"net/http"
+	"openmovies/internal/data"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -64,4 +69,101 @@ func (app *application) rateLimit(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (app *application) authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			r = app.contextSetUser(r, data.AnonymousUser)
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 && parts[0] != "Bearer" {
+			app.invalidTokenResponse(w, r)
+			return
+		}
+
+		tokenString := parts[1]
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("invalid signing method")
+			}
+
+			return []byte(app.config.jwtSecret), nil
+		},
+			jwt.WithIssuer("github.com/nguyentanphu/openmovies"),
+			jwt.WithAudience("github.com/nguyentanphu/openmovies"),
+			jwt.WithExpirationRequired(),
+		)
+		if err != nil || !token.Valid {
+			app.invalidTokenResponse(w, r)
+			return
+		}
+
+		idString, _ := token.Claims.GetSubject()
+		id, err := strconv.ParseInt(idString, 10, 64)
+		if err != nil {
+			app.invalidTokenResponse(w, r)
+			return
+		}
+
+		user, err := app.models.Users.GetById(id)
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
+			return
+		}
+
+		r = app.contextSetUser(r, user)
+		app.logger.LogInfo("valid token", nil)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (app *application) requireAuthenticatedUser(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+		if user.IsAnonymous() {
+			app.authenticationRequiredResponse(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
+func (app *application) requireActivatedUser(next http.HandlerFunc) http.HandlerFunc {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+		if !user.Activated {
+			app.inactiveAccountResponse(w, r)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}
+
+	return app.requireAuthenticatedUser(fn)
+}
+
+func (app *application) requirePermission(code string, next http.HandlerFunc) http.HandlerFunc {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		user := app.contextGetUser(r)
+
+		permissions, err := app.models.Permissions.GetAllForUser(user.ID)
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
+			return
+		}
+
+		if !permissions.Includes(code) {
+			app.notPermittedResponse(w, r)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}
+
+	return app.requireActivatedUser(fn)
 }

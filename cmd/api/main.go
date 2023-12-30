@@ -31,6 +31,7 @@ type config struct {
 		password string
 		sender   string
 	}
+	jwtSecret string
 }
 
 type application struct {
@@ -55,6 +56,7 @@ func main() {
 	flag.StringVar(&cfg.smtp.username, "smtp-username", "10f7d074fb1524", "Smtp username")
 	flag.StringVar(&cfg.smtp.password, "smtp-password", "43703899194531", "Smtp password")
 	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "nguyentanphu@flirtingapp.com", "Smtp sender")
+	flag.StringVar(&cfg.jwtSecret, "jwt-secret", "7*}\"[k{.eH#P]>u()o(0]xjgXq^2ofP}y!zP$X;nz6Hz#3O?Z$|ilb)i<8Nymhd", "JWT secret")
 	flag.Parse()
 	logger := jsonlog.New(os.Stdout, jsonlog.LevelInfo)
 

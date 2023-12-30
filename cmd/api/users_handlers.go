@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (app *application) registerUser(w http.ResponseWriter, r *http.Request) {
+func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name     string `json:"name" validate:"required"`
 		Email    string `json:"email" validate:"required,email"`
@@ -75,4 +75,48 @@ func (app *application) registerUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
+
+}
+
+func (app *application) activateUserHandler(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		TokenPlaintext string `json:"token" validate:"required"`
+	}
+
+	err := app.decodeJson(w, r, &input)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	apiErr := app.validateInput(input)
+	if apiErr != nil {
+		app.fieldValidationResponse(w, r, apiErr)
+		return
+	}
+
+	user, err := app.models.Users.GetByToken(data.ScopeActivation, input.TokenPlaintext)
+	if err != nil {
+		switch {
+		case errors.Is(err, data.ErrRecordNotFound):
+			app.fieldValidationResponse(w, r, []apiError{
+				{Field: "token", Message: "invalid token"},
+			})
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+		return
+	}
+	err = app.models.Users.ActivateUser(user.ID, user.Version)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.models.Tokens.DeleteAllForUser(user.ID, data.ScopeActivation)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

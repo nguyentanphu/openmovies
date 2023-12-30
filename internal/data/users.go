@@ -2,12 +2,17 @@ package data
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 	"time"
 )
+
+var AnonymousUser = &User{
+	ID: -1,
+}
 
 type User struct {
 	ID        int64     `json:"id"`
@@ -17,6 +22,10 @@ type User struct {
 	Password  password  `json:"-"`
 	Activated bool      `json:"activated"`
 	Version   int       `json:"-"`
+}
+
+func (u *User) IsAnonymous() bool {
+	return u == AnonymousUser
 }
 
 type password struct {
@@ -57,8 +66,11 @@ type UserModel struct {
 
 type UserRepository interface {
 	Insert(user *User) error
+	GetById(id int64) (*User, error)
 	GetByEmail(email string) (*User, error)
 	Update(user *User) error
+	GetByToken(scope string, plainToken string) (*User, error)
+	ActivateUser(userId int64, version int) error
 }
 
 func (m UserModel) Insert(user *User) error {
@@ -102,6 +114,27 @@ func (m UserModel) GetByEmail(email string) (*User, error) {
 	return &user, nil
 }
 
+func (m UserModel) GetById(id int64) (*User, error) {
+	query := `
+		SELECT id, created_at, name, email, password_hash, activated, version FROM users
+		WHERE id = $1`
+	var user User
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := m.DB.QueryRowContext(ctx, query, id).Scan(&user.ID,
+		&user.CreatedAt, &user.Name, &user.Email, &user.Password.hash, &user.Activated, &user.Version,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return nil, ErrRecordNotFound
+		default:
+			return nil, err
+		}
+	}
+	return &user, nil
+}
+
 func (m UserModel) Update(user *User) error {
 	query := ` UPDATE users
 		SET name = $1, password_hash = $2, activated = $3, version = version + 1 
@@ -126,4 +159,44 @@ func (m UserModel) Update(user *User) error {
 	}
 
 	return err
+}
+
+func (m UserModel) ActivateUser(userId int64, version int) error {
+	query := ` UPDATE users
+		SET activated = true, version = version + 1 
+		WHERE id = $1 AND version = $2`
+	args := []any{userId, version}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := m.DB.QueryContext(ctx, query, args...)
+	return err
+}
+
+func (m UserModel) GetByToken(scope string, plainToken string) (*User, error) {
+	hash := sha256.Sum256([]byte(plainToken))
+	query := `SELECT users.id, users.created_at, users.name, users.email, users.password_hash, users.activated, users.version FROM users
+				INNER JOIN tokens ON users.id = tokens.user_id
+				WHERE tokens.hash = $1 AND tokens.scope = $2 AND tokens.expiry > $3`
+
+	args := []any{hash[:], scope, time.Now()}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var user User
+	err := m.DB.QueryRowContext(ctx, query, args...).Scan(
+		&user.ID,
+		&user.CreatedAt,
+		&user.Name,
+		&user.Email,
+		&user.Password.hash,
+		&user.Activated,
+		&user.Version,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, err
+	}
+
+	return &user, nil
 }
